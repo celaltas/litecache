@@ -2,7 +2,13 @@ package cache
 
 import (
 	"container/list"
+	"errors"
 	"sync"
+)
+
+var (
+	ErrInvalidCapacity = errors.New("invalid capacity")
+	ErrKeyNotFound     = errors.New("key not found")
 )
 
 type Cache struct {
@@ -12,24 +18,27 @@ type Cache struct {
 	mutex    sync.RWMutex
 }
 
-func New(capacity int) *Cache {
+func New(capacity int) (*Cache, error) {
+	if capacity <= 0 {
+		return nil, ErrInvalidCapacity
+	}
 	return &Cache{
 		capacity: capacity,
 		cache:    list.New(),
 		elements: make(map[string]*list.Element),
-	}
+	}, nil
 }
 
-func (c *Cache) Get(key []byte) []byte {
+func (c *Cache) Get(key []byte) ([]byte, error) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	if elem, ok := c.elements[string(key)]; ok {
-		value := elem.Value.(*list.Element).Value.(Item).Value
+		value := elem.Value.(Item).Value
 		c.cache.MoveToFront(elem)
-		return value
+		return value, nil
 	}
-	return nil
+	return nil, ErrKeyNotFound
 }
 
 func (c *Cache) Set(key, val []byte) {
@@ -38,13 +47,13 @@ func (c *Cache) Set(key, val []byte) {
 
 	if elem, ok := c.elements[string(key)]; ok {
 		c.cache.MoveToFront(elem)
-		elem.Value.(*list.Element).Value = Item{
+		elem.Value = Item{
 			Key:   key,
 			Value: val,
 		}
 	} else {
 		if c.cache.Len() == c.capacity {
-			index := c.cache.Back().Value.(*list.Element).Value.(Item).Key
+			index := c.cache.Back().Value.(Item).Key
 			delete(c.elements, string(index))
 			c.cache.Remove(c.cache.Back())
 		}
@@ -60,13 +69,14 @@ func (c *Cache) Set(key, val []byte) {
 
 }
 
-func (c *Cache) Remove(key []byte) {
-
+func (c *Cache) Remove(key []byte) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
 	if elem, ok := c.elements[string(key)]; ok {
 		delete(c.elements, string(key))
 		c.cache.Remove(elem)
+		return nil
 	}
+	return ErrKeyNotFound
 }
